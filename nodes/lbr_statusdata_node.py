@@ -20,7 +20,7 @@ import sys
 import math
 import rclpy
 from rclpy.node import Node
-from kmr_msgs.msg import LbrStatusdata
+from kmr_iiwa_msgs.msg import LbrStatusdata
 from builtin_interfaces.msg import Time
 from rclpy.qos import qos_profile_sensor_data
 from tcpSocket import TCPSocket
@@ -40,14 +40,13 @@ class LbrStatusNode(Node):
         self.name='lbr_statusdata_node'
         self.last_status_timestamp = 0
         self.path_finished = False
-        self.declare_parameter('port')
+
+        self.declare_parameter('port', 30006)
         port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
+        if robot in ('KMR1', 'KMR2'):
+            param_name = f'{robot}/ip'
+            self.declare_parameter(param_name, '172.31.1.149')
+            ip = self.get_parameter(param_name).value
         else:
             ip = None
 
@@ -63,9 +62,11 @@ class LbrStatusNode(Node):
         # Make Publisher for statusdata
         self.pub_lbr_statusdata = self.create_publisher(LbrStatusdata, 'lbr_statusdata', 10)
 
-        while not self.soc.isconnected:
-            pass
-        self.get_logger().info('Node is ready')
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
             self.status_callback(self.pub_lbr_statusdata, self.soc.lbr_statusdata)

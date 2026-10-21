@@ -107,9 +107,8 @@ class TCPSocket:
                     if len(cmd_splt) and cmd_splt[0] == 'lbr_sensordata':
                         self.lbr_sensordata.append(cmd_splt)
 
-            except:
-                t = 0
-
+            except Exception as e:
+                print("ERROR:", e)
 
         print("SHUTTING DOWN")
         self.connection.shutdown(socket.SHUT_RDWR)

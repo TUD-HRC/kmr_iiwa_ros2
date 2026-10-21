@@ -19,13 +19,14 @@ import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Float64
+from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.utilities import remove_ros_args
 import argparse
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from kmr_msgs.msg import LbrStatusdata
-from kmr_msgs.action import MoveManipulator
+from kmr_iiwa_msgs.msg import LbrStatusdata
+from kmr_iiwa_msgs.action import MoveManipulator
 from tcpSocket import TCPSocket
 from udpSocket import UDPSocket
 from rclpy.action import ActionServer, GoalResponse
@@ -42,14 +43,13 @@ class LbrCommandsNode(Node):
     def __init__(self,connection_type,robot):
         super().__init__('lbr_commands_node')
         self.name = 'lbr_commands_node'
-        self.declare_parameter('port')
+
+        self.declare_parameter('port', 30005)
         port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
+        if robot in ('KMR1', 'KMR2'):
+            param_name = f'{robot}/ip'
+            self.declare_parameter(param_name, '172.31.1.149')
+            ip = self.get_parameter(param_name).value
         else:
             ip = None
 
@@ -65,19 +65,22 @@ class LbrCommandsNode(Node):
         
 
         # Make a listener for relevant topics
-        sub_manipulator_vel = self.create_subscription(String, 'manipulator_vel', self.manipulatorVel_callback, 10)
-        sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
-        sub_statusdata=self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
-        self.path_server = ActionServer(self,MoveManipulator,'move_manipulator', self.move_manipulator_callback,callback_group=self.callback_group)
+
+        self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
+        self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
+        self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
+        self.action_joint_trajectory = ActionServer(self, MoveManipulator, 'joint_trajectory', self.action_joint_trajectory_callback,callback_group=self.callback_group)
 
         self.point_publisher = self.create_publisher(Float64, 'vinkel', 20)
 
         self.done_moving = False
         self.last_path_variable = False
 
-        while not self.soc.isconnected:
-            pass
-        self.get_logger().info('Node is ready')
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info("Socket connected, node is ready")
 
     def status_callback(self,data):
         if (self.last_path_variable == False and data.path_finished == True):
@@ -92,11 +95,13 @@ class LbrCommandsNode(Node):
         self.soc.send(msg)
         self.soc.isconnected = False
 
-    def manipulatorVel_callback(self, data):
-        msg = 'setLBRmotion ' + data.data
-        self.soc.send(msg)
+    def joint_cmd_callback(self, msg:JointState):
+        #TODO validate input
+        #string_command = "SetJointPosition " + " ".join(f"{x:.3f}" for x in msg.position)
+        string_command = "SetJointServoPosition " + " ".join(f"{x:.3f}" for x in msg.position)
+        self.soc.send(string_command)
 
-    def move_manipulator_callback(self, goal_handle):
+    def action_joint_trajectory_callback(self, goal_handle):
         self.path_callback(goal_handle.request.path)
         self.done_moving = False
         while (not self.done_moving):

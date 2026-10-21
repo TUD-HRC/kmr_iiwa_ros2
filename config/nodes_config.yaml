@@ -1,9 +1,11 @@
+#These are the ip of the tcp/udp servers,
+#So the pc running these ros2 nodes.
 kmp_statusdata_node:
   ros__parameters:
 
     port: 30001
     KMR1/ip: '172.31.1.149'
-    KMR2/ip: "172.31.1.149"
+    KMR2/ip: '172.31.1.149'
 
 kmp_commands_node:
   ros__parameters:
@@ -14,10 +16,9 @@ kmp_commands_node:
 
 kmp_laserscan_node:
   ros__parameters:
-
+    robot_name: 'kmr_iiwa'
     port: 30003
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
 
 kmp_odometry_node:
   ros__parameters:
@@ -42,7 +43,7 @@ lbr_statusdata_node:
 
 lbr_sensordata_node:
   ros__parameters:
-
+    robot_name: 'kmr_iiwa'
     port: 30007
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
+    connection_type: 'TCP'

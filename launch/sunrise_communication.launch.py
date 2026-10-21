@@ -37,7 +37,7 @@ def generate_launch_description(argv=sys.argv[1:]):
     param_dir = LaunchConfiguration(
         'param_dir',
         default=os.path.join(
-            get_package_share_directory('kmr_communication'),
+            get_package_share_directory('kmr_iiwa_ros2'),
             'config',
             'nodes_config.yaml'))
 
@@ -47,22 +47,8 @@ def generate_launch_description(argv=sys.argv[1:]):
             default_value=param_dir,
             description='Full path to parameter file to load'),
 
-#        launch_ros.actions.Node(
-#            package="tf2_ros",
-#            executable="static_transform_publisher",
-#            output="screen",
-#            arguments=['0','0','0','0','0','0','laser_B4_link','scan_2'],
-#           ),
-
-#        launch_ros.actions.Node(
-#            package="tf2_ros",
-#            executable="static_transform_publisher",
-#            output="screen",
-#            arguments=['0','0','0','0','0','0','laser_B1_link','scan'],
-#           ),
-
         launch_ros.actions.Node(
-            package="kmr_communication",
+            package="kmr_iiwa_ros2",
             executable="kmp_commands_node.py",
             name="kmp_commands_node",
             output="screen",
@@ -71,25 +57,26 @@ def generate_launch_description(argv=sys.argv[1:]):
             parameters=[param_dir]),
 
         launch_ros.actions.Node(
-           package="kmr_communication",
+           package="kmr_iiwa_ros2",
            executable="kmp_laserscan_node.py",
            name="kmp_laserscan_node",
+           namespace="kmr_iiwa",
            output="screen",
            emulate_tty=True,
            arguments=['-c', connection_type_TCP, '-ro', robot],
            parameters=[param_dir]),
 
         launch_ros.actions.Node(
-           package="kmr_communication",
-           executable="kmp_odometry_node.py",
-           name="kmp_odometry_node",
-           output="screen",
-           emulate_tty=True,
-           arguments=['-c', connection_type_TCP,'-ro',robot],
-           parameters=[param_dir]),
+            package="kmr_iiwa_ros2",
+            executable="kmp_odometry_node.py",
+            name="kmp_odometry_node",
+            namespace="kmr_iiwa",
+            output="screen",
+            emulate_tty=True,
+            parameters=[param_dir]),
 
         launch_ros.actions.Node(
-           package="kmr_communication",
+           package="kmr_iiwa_ros2",
            executable="kmp_statusdata_node.py",
            name="kmp_statusdata_node",
            output="screen",
@@ -98,7 +85,7 @@ def generate_launch_description(argv=sys.argv[1:]):
            parameters=[param_dir]),
 
         launch_ros.actions.Node(
-            package="kmr_communication",
+            package="kmr_iiwa_ros2",
             executable="lbr_commands_node.py",
             name="lbr_commands_node",
             output="screen",
@@ -107,7 +94,7 @@ def generate_launch_description(argv=sys.argv[1:]):
             parameters=[param_dir]),
 
         launch_ros.actions.Node(
-            package="kmr_communication",
+            package="kmr_iiwa_ros2",
             executable="lbr_statusdata_node.py",
             name="lbr_statusdata_node",
             output="screen",
@@ -116,11 +103,11 @@ def generate_launch_description(argv=sys.argv[1:]):
             parameters=[param_dir]),
 
         launch_ros.actions.Node(
-            package="kmr_communication",
+            package="kmr_iiwa_ros2",
             executable="lbr_sensordata_node.py",
             name="lbr_sensordata_node",
+            namespace="kmr_iiwa",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
     ])

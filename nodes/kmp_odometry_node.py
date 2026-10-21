@@ -37,27 +37,31 @@ def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 
 
 class KmpOdometryNode(Node):
-    def __init__(self,connection_type,robot):
+    def __init__(self):
         super().__init__('kmp_odometry_node')
         self.name='kmp_odometry_node'
-        self.declare_parameter('port')
-        port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
-        else:
-            ip = None
 
+        self.declare_parameter('robot_name', 'kmr_iiwa')
+        self.robot_name = self.get_parameter('robot_name').value
+        self.declare_parameter('ip', '172.31.1.149')
+        ip = self.get_parameter('ip').value
+        self.declare_parameter('port', 30004)
+        port = self.get_parameter('port').value
+        self.declare_parameter('connection_type', 'TCP')
+        connection_type = self.get_parameter('connection_type').value
 
+        self.get_logger().info(
+            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
+            f'with {connection_type} socket at: {ip}:{port}'
+        )
+        
         if connection_type == 'TCP':
-            self.soc = TCPSocket(ip,port,self.name)
+            self.soc = TCPSocket(ip, port,self.get_name())
         elif connection_type == 'UDP':
-            self.soc=UDPSocket(ip,port,self.name)
+            self.soc = UDPSocket(ip, port,self.get_name())
         else:
-            self.soc=None
+            self.get_logger().error("connection_type " + connection_type + " not recognized")
+            raise Exception("connection_type " + connection_type + " not recognized")  
 
         self.last_odom_timestamp = 0
 
@@ -67,25 +71,31 @@ class KmpOdometryNode(Node):
         # Create tf broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        while not self.soc.isconnected:
-            pass
-        self.get_logger().info('Node is ready')
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
             self.odom_callback(self.pub_odometry, self.soc.odometry)
 
     def odom_callback(self, publisher, values):
+
+        # print("ODOM received: " )
+        # for val in values:
+        #     print(val)
+
         if (len(values) == 8 and values[1] != self.last_odom_timestamp):
             kmr_timestamp = values[1]
             self.last_odom_timestamp = kmr_timestamp
 
-            x = float(values[2].split(":")[1])
-            y = float(values[3].split(":")[1])
-            th = float(values[4].split(":")[1])
-            vx = float(values[5].split(":")[1])
-            vy = float(values[6].split(":")[1])
-            vth = float(values[7].split(":")[1])
-
+            x = float(values[2])
+            y = float(values[3])
+            th = float(values[4])
+            vx = float(values[5])
+            vy = float(values[6])
+            vth = float(values[7])
 
             odom = Odometry()
             odom.header.stamp = self.get_clock().now().to_msg()
@@ -106,7 +116,7 @@ class KmpOdometryNode(Node):
             odom.pose.pose.position = point
             odom.pose.pose.orientation = odom_quat
 
-            odom.child_frame_id = "base_footprint"
+            odom.child_frame_id = f'{self.robot_name}_base_link'
             linear = Vector3()
             linear.x = vx
             linear.y = vy
@@ -121,7 +131,7 @@ class KmpOdometryNode(Node):
             odom.twist.twist.angular = angular
 
             # Create transform
-            odom_tf= TransformStamped()
+            odom_tf = TransformStamped()
             odom_tf.transform.translation.x = odom.pose.pose.position.x
             odom_tf.transform.translation.y = odom.pose.pose.position.y
             odom_tf.transform.translation.z = odom.pose.pose.position.z
@@ -143,13 +153,10 @@ class KmpOdometryNode(Node):
         return [qx, qy, qz, qw]
 
 
-def main(argv=sys.argv[1:]):
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--connection')
-    parser.add_argument('-ro', '--robot')
-    args = parser.parse_args(remove_ros_args(args=argv))
-    rclpy.init(args=argv)
-    odometry_node = KmpOdometryNode(args.connection,args.robot)
+def main(args=None):
+
+    rclpy.init(args=args)
+    odometry_node = KmpOdometryNode()
 
     while rclpy.ok():
         rclpy.spin_once(odometry_node)

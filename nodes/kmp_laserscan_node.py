@@ -15,21 +15,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import _thread as thread
-import time
-import os
 import sys
 import math
 import rclpy
 from rclpy.node import Node
-import socket
-from std_msgs.msg import String
-from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
-from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
-from builtin_interfaces.msg import Time
-from tf2_ros.transform_broadcaster import TransformBroadcaster
-from tf2_ros import StaticTransformBroadcaster
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.utilities import remove_ros_args
 import argparse
@@ -40,113 +30,121 @@ from udpSocket import UDPSocket
 
 def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 
-
-
 class KmpLaserScanNode(Node):
-    def __init__(self,connection_type,robot):
+    def __init__(self):
         super().__init__('kmp_laserscan_node')
-        self.name='kmp_laserscan_node'
-        self.declare_parameter('port')
-        port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
-        else:
-            ip = None
 
+        self.declare_parameter('robot_name', 'kmr_iiwa')
+        robot_name = self.get_parameter('robot_name').value
+        self.declare_parameter('ip', '172.31.1.149')
+        ip = self.get_parameter('ip').value
+        self.declare_parameter('port', 30003)
+        port = self.get_parameter('port').value
+        self.declare_parameter('connection_type', 'TCP')
+        connection_type = self.get_parameter('connection_type').value
+
+        self.get_logger().info(
+            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
+            f'with {connection_type} socket at: {ip}:{port}'
+        )
+        
         if connection_type == 'TCP':
-            self.soc = TCPSocket(ip, port,self.name)
+            self.soc = TCPSocket(ip, port,self.get_name())
         elif connection_type == 'UDP':
-            self.soc = UDPSocket(ip, port,self.name)
+            self.soc = UDPSocket(ip, port,self.get_name())
         else:
-            self.soc = None
-
+            self.get_logger().error("connection_type " + connection_type + " not recognized")
+            raise Exception("connection_type " + connection_type + " not recognized")  
 
         self.last_scan_timestamp = 0
-
+        self.scan_front_right = LaserScan()
+        self.scan_back_left = LaserScan()
+        # logLaserConfig() method checking LaserConfig from KUKA API gives:
+        # startAngle = -2.3561944
+        # fov = 4.7123888
+        # angularResolution = 0.0087266 (= 0.5deg from datasheet)
+        # maximumRange = 29.0 (30.0m from datasheet)
+        # accuracy = 0.01
+        # typeID = 9 (what does this mean?)
+        # remissionMode = 0 (what does this mean?)
+        # Datasheet SICK S300 scanning angle 270deg
+        # Datasheet resolution options: 0.03m 0.04 0.05 0.06 0.07 0.15
+        self.scan_front_right.angle_increment = 0.0087266 #(0.5*math.pi)/180
+        self.scan_front_right.angle_min = -2.3561944 #(-135*math.pi)/180
+        self.scan_front_right.angle_max = 2.3561944 #(135*math.pi)/180
+        self.scan_front_right.range_min = 0.10
+        self.scan_front_right.range_max = 29.0
+        self.scan_front_right.header.frame_id = f"{robot_name}_scan_front_right_link"
+        self.scan_front_right.angle_increment = 0.0087266 #(0.5*math.pi)/180
+        self.scan_front_right.angle_min = -2.3561944 #(-135*math.pi)/180
+        self.scan_front_right.angle_max = 2.3561944 #(135*math.pi)/180
+        self.scan_front_right.range_min = 0.10
+        self.scan_front_right.range_max = 29.0
+        self.scan_back_left.header.frame_id = f"{robot_name}_scan_back_left_link"
 
         # Make Publishers for relevant data
-        self.pub_laserscan1 = self.create_publisher(LaserScan, 'scan', qos_profile_sensor_data)
-        self.pub_laserscan2 = self.create_publisher(LaserScan, 'scan_2', qos_profile_sensor_data)
+        self.pub_scan_front_right = self.create_publisher(LaserScan, 'scan_front_right', qos_profile_sensor_data)
+        self.pub_scan_back_left = self.create_publisher(LaserScan, 'scan_back_left', qos_profile_sensor_data)
 
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
 
-        while not self.soc.isconnected:
-        	pass
-        self.get_logger().info('Node is ready')
-
+        self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
             if len(self.soc.laserScanB1):
-                self.scan_callback(self.pub_laserscan1, self.soc.laserScanB1.pop(0))
+                self.scan_front_right_callback(self.soc.laserScanB1.pop(0))
             if len(self.soc.laserScanB4):
-                self.scan_callback(self.pub_laserscan2, self.soc.laserScanB4.pop(0))
+                self.scan_back_left_callback(self.soc.laserScanB4.pop(0))
 
+    def scan_front_right_callback(self, values):
 
-
-    def scan_callback(self, publisher, values):
-        if (len(values) == 4 and values[1] != self.last_scan_timestamp):
+        if (len(values) == 4):
             kmr_timestamp = values[1]
             self.last_scan_timestamp = kmr_timestamp
-            scan = LaserScan()
-            scan.header.stamp = self.get_clock().now().to_msg()
-            if values[2] == '1801':
-                scan.header.frame_id = "laser_B1_link"
-            elif values[2] == '1802':
-                scan.header.frame_id = "laser_B4_link"
-            scan.angle_increment = (0.5*math.pi)/180
-            scan.angle_min = (-135*math.pi)/180
-            scan.angle_max = (135*math.pi)/180
-            scan.range_min = 0.12
-            scan.range_max = 15.0
+            #TODO put real timestap from laser
+            self.scan_front_right.header.stamp = self.get_clock().now().to_msg()
+
+            #just for debug, differentiation of the two device is already done in tcpSocket
+            #filling self.soc.laserScanB1 or self.soc.laserScanB4
+            #assert(values[2] == '1801')
+
             try:
-                scan.ranges = [float(s) for s in values[3].split(',') if len(s)>0]
+                self.scan_front_right.ranges = [float(s) for s in values[3].split(',') if len(s)>0]
             except ValueError as e:
                 print(values[3].split(','))
                 print("Error", e)
-            if scan.header.frame_id == "laser_B1_link":
-                self.pub_laserscan1.publish(scan)
-            elif scan.header.frame_id == "laser_B4_link":
-                self.pub_laserscan2.publish(scan)
+            self.pub_scan_front_right.publish(self.scan_front_right)
+        else:
+            self.get_logger().error("Front Right Scan msg format error: expected lenght 4, received " 
+                                    + str(len(values)), throttle_duration_sec = 1.0)
 
+    def scan_back_left_callback(self, values):
 
+        if (len(values) == 4):
+            kmr_timestamp = values[1]
+            self.last_scan_timestamp = kmr_timestamp
+            #TODO put real timestap from laser
+            self.scan_back_left.header.stamp = self.get_clock().now().to_msg()
 
-    def euler_to_quaternion(self, roll, pitch, yaw):
-        qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-        qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
-        qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
-        qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-        return [qx, qy, qz, qw]
+            #just for debug, differentiation of the two device is already done in tcpSocket
+            #filling self.soc.laserScanB1 or self.soc.laserScanB4
+            #assert(values[2] == '1802')
 
-    def send_static_transform(self):
-        broadcaster1 = StaticTransformBroadcaster(self)
-        broadcaster2 = StaticTransformBroadcaster(self)
-        static_transformStamped = TransformStamped()
-        static_transformStamped.header.frame_id = "laser_B4_link"
-        static_transformStamped.child_frame_id = "scan_2"
-        static_transformStamped.transform.translation.x = 0.0
-        static_transformStamped.transform.translation.y = 0.0
-        static_transformStamped.transform.translation.z = 0.0
-        quat = self.euler_to_quaternion(0, 0, 0)
-        static_transformStamped.transform.rotation.x = quat[0]
-        static_transformStamped.transform.rotation.y = quat[1]
-        static_transformStamped.transform.rotation.z = quat[2]
-        static_transformStamped.transform.rotation.w = quat[3]
-        broadcaster1.sendTransform(static_transformStamped)
-        static_transformStamped.header.frame_id = "laser_B1_link"
-        static_transformStamped.child_frame_id = "scan"
-        broadcaster2.sendTransform(static_transformStamped)
+            try:
+                self.scan_back_left.ranges = [float(s) for s in values[3].split(',') if len(s)>0]
+            except ValueError as e:
+                print(values[3].split(','))
+                print("Error", e)
+            self.pub_scan_back_left.publish(self.scan_back_left)
+        else:
+            self.get_logger().error("Back Left Scan msg format error: expected lenght 4, received " 
+                                    + str(len(values)), throttle_duration_sec = 1.0)
 
-
-def main(argv=sys.argv[1:]):
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--connection')
-    parser.add_argument('-ro', '--robot')
-    args = parser.parse_args(remove_ros_args(args=argv))
-    rclpy.init(args=argv)
-    laserscan_node = KmpLaserScanNode(args.connection,args.robot)
+def main(args=None):
+    rclpy.init(args=args)
+    laserscan_node = KmpLaserScanNode()
 
     rclpy.spin(laserscan_node)
     try:
@@ -154,7 +152,6 @@ def main(argv=sys.argv[1:]):
         rclpy.shutdown()
     except:
         print(cl_red('Error: ') + "rclpy shutdown failed")
-
 
 
 if __name__ == '__main__':

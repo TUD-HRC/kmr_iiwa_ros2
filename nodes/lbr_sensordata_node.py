@@ -15,26 +15,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import _thread as thread
-import time
-import os
-import sys
-import math
 import rclpy
 from rclpy.node import Node
-import socket
-from std_msgs.msg import String
-from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
+
 from sensor_msgs.msg import JointState
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
-from builtin_interfaces.msg import Time
-from tf2_ros.transform_broadcaster import TransformBroadcaster
-from tf2_ros import StaticTransformBroadcaster
+
 from rclpy.qos import qos_profile_sensor_data
-from rclpy.utilities import remove_ros_args
-import argparse
-import numpy as np
 
 from tcpSocket import TCPSocket
 from udpSocket import UDPSocket
@@ -42,71 +28,74 @@ from udpSocket import UDPSocket
 
 def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 
-
-
 class LbrSensordataNode(Node):
-    def __init__(self,connection_type,robot):
-        super().__init__('lbr_sensordate_node')
-        self.name='lbr_sensordate_node'
-        self.declare_parameter('port')
-        port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
-        else:
-            ip = None
+    def __init__(self):
+        super().__init__('lbr_sensordata_node')
 
+        self.declare_parameter('robot_name', 'kmr_iiwa')
+        robot_name = self.get_parameter('robot_name').value
+        self.declare_parameter('ip', '172.31.1.149')
+        ip = self.get_parameter('ip').value
+        self.declare_parameter('port', 30007)
+        port = self.get_parameter('port').value
+        self.declare_parameter('connection_type', 'TCP')
+        connection_type = self.get_parameter('connection_type').value
+
+        self.get_logger().info(
+            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
+            f'with {connection_type} socket at: {ip}:{port}'
+        )
+        
         if connection_type == 'TCP':
-            self.soc = TCPSocket(ip, port,self.name)
+            self.soc = TCPSocket(ip, port,self.get_name())
         elif connection_type == 'UDP':
-            self.soc = UDPSocket(ip, port,self.name)
+            self.soc = UDPSocket(ip, port,self.get_name())
         else:
-            self.soc = None
+            self.get_logger().error("connection_type " + connection_type + " not recognized")
+            raise Exception("connection_type " + connection_type + " not recognized")  
 
 
         self.last_data_timestamp = 0
-        self.prev_time=0
+        self.prev_time = 0
 
+        self.pub_lbr_sensordata = self.create_publisher(JointState, 'joint_states', 1)
+        self.joint_state_msg = JointState()
+        self.joint_state_msg.name = [f"{robot_name}_A{i}" for i in range(1, 8)]
 
-        # Make Publishers for relevant data
-        self.pub_lbr_sensordata = self.create_publisher(JointState, 'joint_states', 20)
-        self.joint_names = ["joint_a1","joint_a2","joint_a3","joint_a4","joint_a5","joint_a6","joint_a7"]
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
 
-        while not self.soc.isconnected:
-            pass
-        self.get_logger().info('Node is ready')
+        self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
             if len(self.soc.lbr_sensordata):
-                # lbr_sensordata is data received over the socket.
-                self.data_callback(self.pub_lbr_sensordata, self.soc.lbr_sensordata.pop(0))
+                self.data_callback(self.soc.lbr_sensordata.pop(0))
 
-    def data_callback(self, publisher, values):
-        data=values[1]
-        if (data.split(',')[1] != self.last_data_timestamp):
-            self.last_data_timestamp = data.split(',')[1]
-            effort = [float(s) for s in data.split('MeasuredTorque:')[1].split(',') if len(s)>0]
-            position = [float(s) for s in data.split('JointPosition:')[1].split('MeasuredTorque:')[0].split(',') if len(s)>0]
-            msg = JointState()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.name = self.joint_names
-            msg.position = position
-            msg.effort = effort
-            publisher.publish(msg)
+    def data_callback(self, values):
+        # ">lbr_sensordata,<timestamp>,<7 positions>,<7 torques>"
+        parts = values[1].split(',')
 
+        if len(parts) != 16:
+            self.get_logger().error(
+                f"Invalid lbr_sensordata message, expected 16 fields, got {len(parts)}"
+            )
+            return
 
+        self.last_data_timestamp = parts[1]
 
+        self.joint_state_msg.header.stamp = self.get_clock().now().to_msg()
 
-def main(argv=sys.argv[1:]):
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--connection')
-    parser.add_argument('-ro', '--robot')
-    args = parser.parse_args(remove_ros_args(args=argv))
-    rclpy.init(args=argv)
-    lbr_sensordata_node = LbrSensordataNode(args.connection,args.robot)
+        #self.get_logger().info(f"Robot time {parts[1]}, pc time:{self.get_clock().now().nanoseconds}", throttle_duration_sec=1.0)
+        
+        self.joint_state_msg.position = [float(x) for x in parts[2:9]]
+        self.joint_state_msg.effort = [float(x) for x in parts[9:16]]
+
+        self.pub_lbr_sensordata.publish(self.joint_state_msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+    lbr_sensordata_node = LbrSensordataNode()
 
     rclpy.spin(lbr_sensordata_node)
 
@@ -115,7 +104,6 @@ def main(argv=sys.argv[1:]):
         rclpy.shutdown()
     except:
         print(cl_red('Error: ') + "rclpy shutdown failed")
-
 
 
 if __name__ == '__main__':

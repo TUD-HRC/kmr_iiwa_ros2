@@ -37,16 +37,15 @@ class KmpCommandsNode(Node):
     def __init__(self,connection_type,robot):
         super().__init__('kmp_commands_node')
         self.name = 'kmp_commands_node'
-        self.declare_parameter('port')
+        self.declare_parameter('port', 30002)
         port = int(self.get_parameter('port').value)
-        if robot == 'KMR1':
-            self.declare_parameter('KMR1/ip')
-            ip = str(self.get_parameter('KMR1/ip').value)
-        elif robot == 'KMR2':
-            self.declare_parameter('KMR2/ip')
-            ip = str(self.get_parameter('KMR2/ip').value)
+
+        if robot in ('KMR1', 'KMR2'):
+            param_name = f'{robot}/ip'
+            self.declare_parameter(param_name, '172.31.1.149')
+            ip = self.get_parameter(param_name).value
         else:
-            ip=None
+            ip = None
 
         if connection_type == 'TCP':
             self.soc = TCPSocket(ip,port,self.name)
@@ -60,9 +59,11 @@ class KmpCommandsNode(Node):
         sub_pose = self.create_subscription(Pose, 'pose', self.pose_callback, 10)
         sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
 
-        while not self.soc.isconnected:
-            pass
-        self.get_logger().info('Node is ready')
+        self.get_logger().info("Waiting for socket connection...")
+        while rclpy.ok() and not self.soc.isconnected:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info("Socket connected, node is ready")
 
 
     def shutdown_callback(self, data):
