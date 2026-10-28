@@ -55,7 +55,7 @@ class KmpCommandsNode(Node):
             self.soc = None
 
         # Make a listener for relevant topics
-        sub_twist = self.create_subscription(Twist, 'cmd_vel', self.twist_callback, 10)
+        self.sub_twist = self.create_subscription(Twist, 'cmd_vel', self.twist_callback, 10)
         sub_pose = self.create_subscription(Pose, 'pose', self.pose_callback, 10)
         sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
 
