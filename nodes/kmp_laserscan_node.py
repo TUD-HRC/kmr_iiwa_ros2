@@ -75,11 +75,11 @@ class KmpLaserScanNode(Node):
         self.scan_front_right.range_min = 0.10
         self.scan_front_right.range_max = 29.0
         self.scan_front_right.header.frame_id = f"{robot_name}_scan_front_right_link"
-        self.scan_front_right.angle_increment = 0.0087266 #(0.5*math.pi)/180
-        self.scan_front_right.angle_min = -2.3561944 #(-135*math.pi)/180
-        self.scan_front_right.angle_max = 2.3561944 #(135*math.pi)/180
-        self.scan_front_right.range_min = 0.10
-        self.scan_front_right.range_max = 29.0
+        self.scan_back_left.angle_increment = 0.0087266 #(0.5*math.pi)/180
+        self.scan_back_left.angle_min = -2.3561944 #(-135*math.pi)/180
+        self.scan_back_left.angle_max = 2.3561944 #(135*math.pi)/180
+        self.scan_back_left.range_min = 0.10
+        self.scan_back_left.range_max = 29.0
         self.scan_back_left.header.frame_id = f"{robot_name}_scan_back_left_link"
 
         # Make Publishers for relevant data
