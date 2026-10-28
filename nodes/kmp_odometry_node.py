@@ -15,18 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import _thread as thread
-import sys
 import math
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
+from std_srvs.srv import Trigger
+from geometry_msgs.msg import Point, Quaternion, Vector3, TransformStamped
 from nav_msgs.msg import Odometry
-from builtin_interfaces.msg import Time
 from tf2_ros.transform_broadcaster import TransformBroadcaster
 from rclpy.qos import qos_profile_sensor_data
-from rclpy.utilities import remove_ros_args
-import argparse
 
 from tcpSocket import TCPSocket
 from udpSocket import UDPSocket
@@ -49,6 +45,10 @@ class KmpOdometryNode(Node):
         port = self.get_parameter('port').value
         self.declare_parameter('connection_type', 'TCP')
         connection_type = self.get_parameter('connection_type').value
+        self.declare_parameter('init_odom', True)
+        self.init_odom = self.get_parameter('init_odom').value
+        self.declare_parameter('period_sec', 0.01)
+        period_sec = self.get_parameter('period_sec').value
 
         self.get_logger().info(
             f'Starting up node: {self.get_namespace()}/{self.get_name()} '
@@ -63,11 +63,19 @@ class KmpOdometryNode(Node):
             self.get_logger().error("connection_type " + connection_type + " not recognized")
             raise Exception("connection_type " + connection_type + " not recognized")  
 
-        self.last_odom_timestamp = 0
+        self.last_odom_timestamp = ""
+        self.odom_x = 0.0
+        self.odom_y = 0.0
+        self.odom_th = 0.0
+        self.odom_offset_x = 0.0
+        self.odom_offset_y = 0.0
+        self.odom_offset_th = 0.0
 
         # Make Publisher for odometry
-        self.pub_odometry = self.create_publisher(Odometry, 'odom', qos_profile_sensor_data)
+        self.odom_pub = self.create_publisher(Odometry, 'odom', qos_profile_sensor_data)
 
+        self.reset_odom_srv = self.create_service(Trigger, 'reset_odom', self.reset_odom_callback)
+        self.get_odom_offset_srv = self.create_service(Trigger, 'get_odom_offset', self.get_odom_offset_callback)
         # Create tf broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -78,71 +86,113 @@ class KmpOdometryNode(Node):
         self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
-            self.odom_callback(self.pub_odometry, self.soc.odometry)
+            self.odom_callback(self.soc.odometry)
+            rclpy.spin_once(self, timeout_sec=period_sec)
 
-    def odom_callback(self, publisher, values):
+    def odom_callback(self, values):
 
+        if len(values) == 0:
+            return
+
+        if len(values) != 8:
+            self.get_logger().error(
+                f'Invalid odom message: expected 8 fields, got {len(values)}: {values}'
+            )
+            return
+
+        if values[1] == self.last_odom_timestamp:
+            return
+        
         # print("ODOM received: " )
         # for val in values:
-        #     print(val)
+        #     print(val)t\
 
-        if (len(values) == 8 and values[1] != self.last_odom_timestamp):
-            kmr_timestamp = values[1]
-            self.last_odom_timestamp = kmr_timestamp
+        kmr_timestamp = values[1]
+        self.last_odom_timestamp = kmr_timestamp
 
-            x = float(values[2])
-            y = float(values[3])
-            th = float(values[4])
-            vx = float(values[5])
-            vy = float(values[6])
-            vth = float(values[7])
+        self.odom_x = float(values[2])
+        self.odom_y = float(values[3])
+        self.odom_th = float(values[4])
+        vx = float(values[5])
+        vy = float(values[6])
+        vth = float(values[7])
 
-            odom = Odometry()
-            odom.header.stamp = self.get_clock().now().to_msg()
-            odom.header.frame_id = "odom"
+        if self.init_odom:
+            self.odom_offset_x = self.odom_x
+            self.odom_offset_y = self.odom_y
+            self.odom_offset_th = self.odom_th
+            self.init_odom = False
 
-            point = Point()
-            point.x = x
-            point.y = y
-            point.z = float(0)
+        odom = Odometry()
+        odom.header.stamp = self.get_clock().now().to_msg()
+        odom.header.frame_id = "odom"
 
-            odom_quat = Quaternion()
-            quat = self.euler_to_quaternion(0,0,th)
-            odom_quat.x = quat[0]
-            odom_quat.y = quat[1]
-            odom_quat.z = quat[2]
-            odom_quat.w = quat[3]
+        th_sat = math.atan2(
+            math.sin(self.odom_th - self.odom_offset_th),
+            math.cos(self.odom_th - self.odom_offset_th)
+        )
 
-            odom.pose.pose.position = point
-            odom.pose.pose.orientation = odom_quat
+        odom_quat = Quaternion()
+        quat = self.euler_to_quaternion(0,0,th_sat)
+        odom_quat.x = quat[0]
+        odom_quat.y = quat[1]
+        odom_quat.z = quat[2]
+        odom_quat.w = quat[3]
 
-            odom.child_frame_id = f'{self.robot_name}_base_link'
-            linear = Vector3()
-            linear.x = vx
-            linear.y = vy
-            linear.z = float(0)
+        odom.pose.pose.position.x = self.odom_x - self.odom_offset_x
+        odom.pose.pose.position.y = self.odom_y - self.odom_offset_y
+        odom.pose.pose.position.z = 0.0
+        odom.pose.pose.orientation = odom_quat
 
-            angular = Vector3()
-            angular.x = float(0)
-            angular.y = float(0)
-            angular.z = vth
+        odom.child_frame_id = f'{self.robot_name}_base_link'
 
-            odom.twist.twist.linear = linear
-            odom.twist.twist.angular = angular
+        odom.twist.twist.linear.x = vx
+        odom.twist.twist.linear.y = vy
+        odom.twist.twist.linear.z = 0.0
+        odom.twist.twist.angular.x = 0.0
+        odom.twist.twist.angular.y = 0.0
+        odom.twist.twist.angular.z = vth
 
-            # Create transform
-            odom_tf = TransformStamped()
-            odom_tf.transform.translation.x = odom.pose.pose.position.x
-            odom_tf.transform.translation.y = odom.pose.pose.position.y
-            odom_tf.transform.translation.z = odom.pose.pose.position.z
-            odom_tf.transform.rotation = odom.pose.pose.orientation
+        # Create transform
+        odom_tf = TransformStamped()
+        odom_tf.transform.translation.x = odom.pose.pose.position.x
+        odom_tf.transform.translation.y = odom.pose.pose.position.y
+        odom_tf.transform.translation.z = odom.pose.pose.position.z
+        odom_tf.transform.rotation = odom.pose.pose.orientation
 
-            odom_tf.header.frame_id = odom.header.frame_id
-            odom_tf.child_frame_id = odom.child_frame_id
-            odom_tf.header.stamp = odom.header.stamp
-            self.tf_broadcaster.sendTransform(odom_tf)
-            publisher.publish(odom)
+        odom_tf.header.frame_id = odom.header.frame_id
+        odom_tf.child_frame_id = odom.child_frame_id
+        odom_tf.header.stamp = odom.header.stamp
+        self.tf_broadcaster.sendTransform(odom_tf)
+        self.odom_pub.publish(odom)
 
+    def reset_odom_callback(self, request, response):
+
+        self.odom_offset_x = self.odom_x
+        self.odom_offset_y = self.odom_y
+        self.odom_offset_th = self.odom_th
+
+        response.success = True
+        response.message = (
+            f"New Odom offset: "
+            f"x={self.odom_offset_x:.3f}, "
+            f"y={self.odom_offset_y:.3f}, "
+            f"th={self.odom_offset_th:.3f}"
+        )
+
+        self.get_logger().info(response.message)
+
+        return response
+
+    def get_odom_offset_callback(self, request, response):
+        response.message = (
+            f"Odom offset: "
+            f"x={self.odom_offset_x:.3f}, "
+            f"y={self.odom_offset_y:.3f}, "
+            f"th={self.odom_offset_th:.3f}"
+        )
+        response.success = True
+        return response
 
     def euler_to_quaternion(self, roll, pitch, yaw):
         qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)

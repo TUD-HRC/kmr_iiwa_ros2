@@ -22,10 +22,12 @@ kmp_laserscan_node:
 
 kmp_odometry_node:
   ros__parameters:
-
-    port: 30004
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    robot_name: 'kmr_iiwa'
+    port: 3000
+    ip: '172.31.1.149'
+    connection_type: 'TCP'
+    init_odom: True
+    period_sec: 0.01
 
 lbr_commands_node:
   ros__parameters:
