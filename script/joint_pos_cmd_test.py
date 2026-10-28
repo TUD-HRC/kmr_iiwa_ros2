@@ -19,19 +19,19 @@ class JointA6Oscillator(Node):
 
         self.sub = self.create_subscription(
             JointState,
-            '/joint_states',
+            '/kmr_iiwa/joint_states',
             self.joint_state_callback,
             10
         )
 
         self.names = [
-            'joint_a1',
-            'joint_a2',
-            'joint_a3',
-            'joint_a4',
-            'joint_a5',
-            'joint_a6',
-            'joint_a7'
+            'kmr_iiwa_A1',
+            'kmr_iiwa_A2',
+            'kmr_iiwa_A3',
+            'kmr_iiwa_A4',
+            'kmr_iiwa_A5',
+            'kmr_iiwa_A6',
+            'kmr_iiwa_A7'
         ]
 
         # Initial robot position
@@ -63,7 +63,7 @@ class JointA6Oscillator(Node):
     def joint_state_callback(self, msg):
 
         try:
-            idx = msg.name.index('joint_a6')
+            idx = msg.name.index('kmr_iiwa_A6')
             self.current_a6 = msg.position[idx]
         except (ValueError, IndexError):
             return
