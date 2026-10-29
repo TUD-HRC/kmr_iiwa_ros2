@@ -76,9 +76,6 @@ class LbrCommandsNode(Node):
         self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
         self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
         self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
-        # Name it like a ros2_control controller so MoveIt's
-        # moveit_simple_controller_manager (controller `arm_controller`,
-        # action_ns `follow_joint_trajectory`) can talk to it unchanged.
         self.fjt_action_server = ActionServer(
             self, FollowJointTrajectory, 'arm_controller/follow_joint_trajectory',
             self.fjt_callback, callback_group=self.callback_group)

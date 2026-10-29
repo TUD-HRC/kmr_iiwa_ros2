@@ -18,16 +18,13 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import GroupAction
 from launch.substitutions import LaunchConfiguration
 import launch_ros.actions
-import sys
-from rclpy.utilities import remove_ros_args
-import argparse
+from launch_ros.actions import PushRosNamespace
 
 
-def generate_launch_description(argv=sys.argv[1:]):
+def generate_launch_description():
 
     connection_type_TCP = 'TCP'
     connection_type_UDP = 'UDP'
@@ -41,11 +38,12 @@ def generate_launch_description(argv=sys.argv[1:]):
             'config',
             'nodes_config.yaml'))
 
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            'param_dir',
-            default_value=param_dir,
-            description='Full path to parameter file to load'),
+    # Every node lives under one namespace so that TF, joint states, cmd_vel
+    # and the arm's FollowJointTrajectory action all line up with Nav2 and
+    # MoveIt (/kmr_iiwa/...).  The nodes use relative topic names, so the
+    # namespace is applied once here instead of per node.
+    nodes = GroupAction([
+        PushRosNamespace(LaunchConfiguration('namespace')),
 
         launch_ros.actions.Node(
             package="kmr_iiwa_ros2",
@@ -53,36 +51,34 @@ def generate_launch_description(argv=sys.argv[1:]):
             name="kmp_commands_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP,'-ro', robot],
+            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         launch_ros.actions.Node(
-           package="kmr_iiwa_ros2",
-           executable="kmp_laserscan_node.py",
-           name="kmp_laserscan_node",
-           namespace="kmr_iiwa",
-           output="screen",
-           emulate_tty=True,
-           arguments=['-c', connection_type_TCP, '-ro', robot],
-           parameters=[param_dir]),
+            package="kmr_iiwa_ros2",
+            executable="kmp_laserscan_node.py",
+            name="kmp_laserscan_node",
+            output="screen",
+            emulate_tty=True,
+            arguments=['-c', connection_type_TCP, '-ro', robot],
+            parameters=[param_dir]),
 
         launch_ros.actions.Node(
             package="kmr_iiwa_ros2",
             executable="kmp_odometry_node.py",
             name="kmp_odometry_node",
-            namespace="kmr_iiwa",
             output="screen",
             emulate_tty=True,
             parameters=[param_dir]),
 
         launch_ros.actions.Node(
-           package="kmr_iiwa_ros2",
-           executable="kmp_statusdata_node.py",
-           name="kmp_statusdata_node",
-           output="screen",
-           emulate_tty=True,
-           arguments=['-c', connection_type_TCP, '-ro', robot],
-           parameters=[param_dir]),
+            package="kmr_iiwa_ros2",
+            executable="kmp_statusdata_node.py",
+            name="kmp_statusdata_node",
+            output="screen",
+            emulate_tty=True,
+            arguments=['-c', connection_type_TCP, '-ro', robot],
+            parameters=[param_dir]),
 
         launch_ros.actions.Node(
             package="kmr_iiwa_ros2",
@@ -106,8 +102,20 @@ def generate_launch_description(argv=sys.argv[1:]):
             package="kmr_iiwa_ros2",
             executable="lbr_sensordata_node.py",
             name="lbr_sensordata_node",
-            namespace="kmr_iiwa",
             output="screen",
             emulate_tty=True,
             parameters=[param_dir]),
+    ])
+
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'param_dir',
+            default_value=param_dir,
+            description='Full path to parameter file to load'),
+        DeclareLaunchArgument(
+            'namespace',
+            default_value='kmr_iiwa',
+            description='Namespace for all KMR iiwa nodes'),
+
+        nodes,
     ])

@@ -13,7 +13,7 @@ class JointA6Oscillator(Node):
 
         self.pub = self.create_publisher(
             JointState,
-            '/joint_cmd',
+            '/kmr_iiwa/joint_cmd',
             10
         )
 
