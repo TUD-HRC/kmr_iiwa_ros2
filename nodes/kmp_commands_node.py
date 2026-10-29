@@ -19,8 +19,7 @@ import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
-from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import Pose, TwistStamped
 from rclpy.utilities import remove_ros_args
 import argparse
 
@@ -55,9 +54,9 @@ class KmpCommandsNode(Node):
             self.soc = None
 
         # Make a listener for relevant topics
-        self.sub_twist = self.create_subscription(Twist, 'cmd_vel', self.twist_callback, 10)
-        sub_pose = self.create_subscription(Pose, 'pose', self.pose_callback, 10)
-        sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
+        self.sub_twist = self.create_subscription(TwistStamped, 'cmd_vel', self.twist_callback, 10)
+        self.sub_pose = self.create_subscription(Pose, 'pose', self.pose_callback, 10)
+        self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
 
         self.get_logger().info("Waiting for socket connection...")
         while rclpy.ok() and not self.soc.isconnected:
@@ -73,7 +72,7 @@ class KmpCommandsNode(Node):
         #self.udp_soc.isconnected = False
 
     def twist_callback(self, data):
-        msg = 'setTwist ' + str(data.linear.x) + " " + str(data.linear.y) + " " + str(data.angular.z)
+        msg = 'setTwist ' + str(data.twist.linear.x) + " " + str(data.twist.linear.y) + " " + str(data.twist.angular.z)
         self.soc.send(msg)
 
     def pose_callback(self, data):
