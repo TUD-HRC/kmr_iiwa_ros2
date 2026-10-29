@@ -16,6 +16,9 @@
 # limitations under the License.
 
 import sys
+import threading
+import time
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Float64
@@ -26,7 +29,7 @@ from rclpy.utilities import remove_ros_args
 import argparse
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from kmr_iiwa_msgs.msg import LbrStatusdata
-from kmr_iiwa_msgs.action import MoveManipulator
+from control_msgs.action import FollowJointTrajectory
 from tcpSocket import TCPSocket
 from udpSocket import UDPSocket
 from rclpy.action import ActionServer, GoalResponse
@@ -62,14 +65,23 @@ class LbrCommandsNode(Node):
 
 
         self.callback_group = ReentrantCallbackGroup()
-        
+
+        self.declare_parameter('robot_name', 'kmr_iiwa')
+        robot_name = self.get_parameter('robot_name').value
+        self.arm_joint_names = [f'{robot_name}_A{i}' for i in range(1, 8)]
+        self.motion_lock = threading.Lock()
 
         # Make a listener for relevant topics
 
         self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
         self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
         self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
-        self.action_joint_trajectory = ActionServer(self, MoveManipulator, 'joint_trajectory', self.action_joint_trajectory_callback,callback_group=self.callback_group)
+        # Name it like a ros2_control controller so MoveIt's
+        # moveit_simple_controller_manager (controller `arm_controller`,
+        # action_ns `follow_joint_trajectory`) can talk to it unchanged.
+        self.fjt_action_server = ActionServer(
+            self, FollowJointTrajectory, 'arm_controller/follow_joint_trajectory',
+            self.fjt_callback, callback_group=self.callback_group)
 
         self.point_publisher = self.create_publisher(Float64, 'vinkel', 20)
 
@@ -101,15 +113,119 @@ class LbrCommandsNode(Node):
         string_command = "SetJointServoPosition " + " ".join(f"{x:.3f}" for x in msg.position)
         self.soc.send(string_command)
 
-    def action_joint_trajectory_callback(self, goal_handle):
-        self.path_callback(goal_handle.request.path)
-        self.done_moving = False
-        while (not self.done_moving):
-            pass
-        result = MoveManipulator.Result()
-        result.success = True
-        goal_handle.succeed()
-        return result
+    def fjt_callback(self, goal_handle):
+        result = FollowJointTrajectory.Result()
+        trajectory = goal_handle.request.trajectory
+
+        # The Sunrise controller receives position, velocity and acceleration
+        # for all seven arm joints at once. Only one path can be executed at a
+        # time, so reject goals that arrive while another one is running.
+        if not self.motion_lock.acquire(blocking=False):
+            result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+            result.error_string = 'Another trajectory is already being executed'
+            goal_handle.abort()
+            return result
+
+        try:
+            if len(trajectory.points) == 0:
+                result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                result.error_string = 'Trajectory contains no points'
+                goal_handle.abort()
+                return result
+
+            try:
+                trajectory = self.normalize_trajectory(trajectory)
+            except ValueError as e:
+                result.error_code = FollowJointTrajectory.Result.INVALID_JOINTS
+                result.error_string = str(e)
+                goal_handle.abort()
+                return result
+
+            self.get_logger().info(
+                f'Received trajectory with {len(trajectory.points)} points')
+
+            # Reset before sending: the arm can report path_finished before
+            # path_callback() returns.
+            self.done_moving = False
+            try:
+                self.path_callback(trajectory)
+            except Exception as e:
+                result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                result.error_string = f'Failed to send trajectory: {e}'
+                goal_handle.abort()
+                return result
+
+            timeout = self.trajectory_timeout(
+                trajectory, goal_handle.request.goal_time_tolerance)
+            deadline = time.monotonic() + timeout
+            while not self.done_moving:
+                if goal_handle.is_cancel_requested:
+                    result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                    result.error_string = (
+                        'Trajectory canceled by client; the arm keeps executing '
+                        'the path that was already sent')
+                    self.get_logger().warn(result.error_string)
+                    goal_handle.canceled()
+                    return result
+                if time.monotonic() > deadline:
+                    result.error_code = (
+                        FollowJointTrajectory.Result.PATH_TOLERANCE_VIOLATED)
+                    result.error_string = (
+                        f'Timeout after {timeout:.1f} s waiting for path_finished')
+                    self.get_logger().error(result.error_string)
+                    goal_handle.abort()
+                    return result
+                time.sleep(0.01)
+
+            result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+            result.error_string = ''
+            goal_handle.succeed()
+            return result
+        finally:
+            self.motion_lock.release()
+
+    def normalize_trajectory(self, trajectory):
+        """Reorder the trajectory to the joint order expected by the arm."""
+        names = list(trajectory.joint_names)
+        if sorted(names) != sorted(self.arm_joint_names):
+            raise ValueError(
+                f'Expected joints {self.arm_joint_names}, got {names}')
+
+        order = [names.index(name) for name in self.arm_joint_names]
+        normalized = JointTrajectory()
+        normalized.header = trajectory.header
+        normalized.joint_names = list(self.arm_joint_names)
+
+        for point in trajectory.points:
+            if len(point.positions) != len(names):
+                raise ValueError(
+                    f'Expected {len(names)} positions per point, '
+                    f'got {len(point.positions)}')
+
+            normalized_point = JointTrajectoryPoint()
+            normalized_point.positions = [point.positions[i] for i in order]
+            if len(point.velocities) == len(names):
+                normalized_point.velocities = [point.velocities[i] for i in order]
+            else:
+                normalized_point.velocities = [0.0] * len(order)
+            if len(point.accelerations) == len(names):
+                normalized_point.accelerations = [
+                    point.accelerations[i] for i in order]
+            else:
+                normalized_point.accelerations = [0.0] * len(order)
+            normalized_point.time_from_start = point.time_from_start
+            normalized.points.append(normalized_point)
+
+        return normalized
+
+    def trajectory_timeout(self, trajectory, goal_time_tolerance):
+        """Seconds to wait for the arm before giving up on the goal."""
+        duration = 0.0
+        if trajectory.points:
+            last = trajectory.points[-1].time_from_start
+            duration = last.sec + last.nanosec * 1e-9
+        tolerance = goal_time_tolerance.sec + goal_time_tolerance.nanosec * 1e-9
+        return max(duration + tolerance + 10.0, 10.0)
 
     def path_callback(self, data):
         i=1
