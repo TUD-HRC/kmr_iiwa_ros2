@@ -77,7 +77,8 @@ class LbrCommandsNode(Node):
         self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
         self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
         self.fjt_action_server = ActionServer(
-            self, FollowJointTrajectory, 'arm_controller/follow_joint_trajectory',
+            self, FollowJointTrajectory,
+            'follow_joint_trajectory_controller/follow_joint_trajectory',
             self.fjt_callback, callback_group=self.callback_group)
 
         self.point_publisher = self.create_publisher(Float64, 'vinkel', 20)

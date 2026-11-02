@@ -40,7 +40,7 @@ Several ROS 2 nodes are started, each communicating over TCP/UDP on a different 
 4. Launch all communication nodes:
 
    ```bash
-   ros2 launch kmr_iiwa_ros2 sunrise_communication.launch.py
+   ros2 launch kmr_iiwa_ros2 sunrise_communication.launch.py #namespace:=kmr_iiwa
    ```
 
 5. Start the Sunrise app from the robot tablet.

@@ -20,8 +20,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import GroupAction
 from launch.substitutions import LaunchConfiguration
-import launch_ros.actions
-from launch_ros.actions import PushRosNamespace
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 
 
 def generate_launch_description():
@@ -44,8 +43,10 @@ def generate_launch_description():
     # namespace is applied once here instead of per node.
     nodes = GroupAction([
         PushRosNamespace(LaunchConfiguration('namespace')),
+        SetRemap(src="/tf", dst="tf"),
+        SetRemap(src="/tf_static", dst="tf_static"),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="kmp_commands_node.py",
             name="kmp_commands_node",
@@ -54,7 +55,7 @@ def generate_launch_description():
             arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="kmp_laserscan_node.py",
             name="kmp_laserscan_node",
@@ -63,7 +64,7 @@ def generate_launch_description():
             arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="kmp_odometry_node.py",
             name="kmp_odometry_node",
@@ -71,7 +72,7 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="kmp_statusdata_node.py",
             name="kmp_statusdata_node",
@@ -80,7 +81,7 @@ def generate_launch_description():
             arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="lbr_commands_node.py",
             name="lbr_commands_node",
@@ -89,7 +90,7 @@ def generate_launch_description():
             arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="lbr_statusdata_node.py",
             name="lbr_statusdata_node",
@@ -98,7 +99,7 @@ def generate_launch_description():
             arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
-        launch_ros.actions.Node(
+        Node(
             package="kmr_iiwa_ros2",
             executable="lbr_sensordata_node.py",
             name="lbr_sensordata_node",
@@ -116,6 +117,5 @@ def generate_launch_description():
             'namespace',
             default_value='kmr_iiwa',
             description='Namespace for all KMR iiwa nodes'),
-
         nodes,
     ])
