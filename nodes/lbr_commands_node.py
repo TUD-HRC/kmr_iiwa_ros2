@@ -21,7 +21,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Float64
+from std_msgs.msg import String, Float64, Float64MultiArray
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, TransformStamped
 from rclpy.qos import qos_profile_sensor_data
@@ -70,12 +70,23 @@ class LbrCommandsNode(Node):
         robot_name = self.get_parameter('robot_name').value
         self.arm_joint_names = [f'{robot_name}_A{i}' for i in range(1, 8)]
         self.motion_lock = threading.Lock()
+        # The FJT path and the servo stream both write to the same socket, so
+        # serialize sends from the multi-threaded executor.
+        self.socket_lock = threading.Lock()
+
+        self.declare_parameter('servo_cmd_topic', 'servo_joint_cmd')
+        servo_cmd_topic = self.get_parameter('servo_cmd_topic').value
 
         # Make a listener for relevant topics
 
         self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
         self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
         self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
+        # MoveIt Servo publishes std_msgs/Float64MultiArray (positions only, in
+        # the MoveIt group's joint order).
+        self.sub_servo_command = self.create_subscription(
+            Float64MultiArray, servo_cmd_topic, self.servo_cmd_callback, 10,
+            callback_group=self.callback_group)
         self.fjt_action_server = ActionServer(
             self, FollowJointTrajectory,
             'follow_joint_trajectory_controller/follow_joint_trajectory',
@@ -105,11 +116,25 @@ class LbrCommandsNode(Node):
         self.soc.send(msg)
         self.soc.isconnected = False
 
+    def send_servo_positions(self, positions):
+        """Stream a joint position command to the arm over the TCP socket."""
+        if len(positions) != len(self.arm_joint_names):
+            self.get_logger().error(
+                f'Expected {len(self.arm_joint_names)} joint positions, '
+                f'got {len(positions)}',
+                throttle_duration_sec=1.0)
+            return
+        string_command = "SetJointServoPosition " + " ".join(f"{x:.3f}" for x in positions)
+        with self.socket_lock:
+            self.soc.send(string_command)
+
     def joint_cmd_callback(self, msg:JointState):
-        #TODO validate input
-        #string_command = "SetJointPosition " + " ".join(f"{x:.3f}" for x in msg.position)
-        string_command = "SetJointServoPosition " + " ".join(f"{x:.3f}" for x in msg.position)
-        self.soc.send(string_command)
+        self.send_servo_positions(msg.position)
+
+    def servo_cmd_callback(self, msg:Float64MultiArray):
+        # Float64MultiArray carries no joint names: Servo publishes in the
+        # active joint order of its move_group_name ("arm"), kmr_iiwa_A1..A7.
+        self.send_servo_positions(msg.data)
 
     def fjt_callback(self, goal_handle):
         result = FollowJointTrajectory.Result()
@@ -244,7 +269,8 @@ class LbrCommandsNode(Node):
 
             self.get_logger().info(f'sending command {msg}')
 
-            self.soc.send(msg)
+            with self.socket_lock:
+                self.soc.send(msg)
             i+=1
 
 
