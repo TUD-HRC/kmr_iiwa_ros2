@@ -75,6 +75,7 @@ install(
     nodes/udpSocket.py
     script/dummy_odom.py
     script/joint_pos_cmd_test.py
+    script/joint_sine_cmd_test.py
     nodes/kmp_commands_node.py
     nodes/kmp_laserscan_node.py
     nodes/kmp_odometry_node.py
