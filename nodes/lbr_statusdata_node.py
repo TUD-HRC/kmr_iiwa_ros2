@@ -43,6 +43,11 @@ class LbrStatusNode(Node):
 
         self.declare_parameter('port', 30006)
         port = int(self.get_parameter('port').value)
+        # Publish the newest status at a bounded rate instead of busy-looping.
+        self.declare_parameter('publish_rate', 50.0)
+        publish_rate = float(self.get_parameter('publish_rate').value)
+        if publish_rate <= 0.0:
+            publish_rate = 50.0
         if robot in ('KMR1', 'KMR2'):
             param_name = f'{robot}/ip'
             self.declare_parameter(param_name, '172.31.1.149')
@@ -66,11 +71,19 @@ class LbrStatusNode(Node):
         while rclpy.ok() and not self.soc.isconnected:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        self.get_logger().info("Socket connected, node is ready")
+        # The socket thread only stores the latest status; publish from a
+        # timer so this node no longer spins at 100 % CPU.
+        self.publish_timer = self.create_timer(
+            1.0 / publish_rate, self.publish_latest)
 
-        while rclpy.ok() and self.soc.isconnected:
-            self.status_callback(self.pub_lbr_statusdata, self.soc.lbr_statusdata)
+        self.get_logger().info(
+            f"Socket connected, node is ready (publish rate "
+            f"{publish_rate:.0f} Hz)")
 
+    def publish_latest(self):
+        data = self.soc.lbr_statusdata
+        if data is not None:
+            self.status_callback(self.pub_lbr_statusdata, data)
 
 
     def status_callback(self,status_publisher, data):

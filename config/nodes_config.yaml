@@ -37,6 +37,10 @@ lbr_commands_node:
     KMR2/ip: '172.31.1.149'
     # MoveIt Servo output (std_msgs/Float64MultiArray, joint order A1..A7).
     servo_cmd_topic: 'servo_joint_cmd'
+    # Fixed-rate servo stream. Lower this if the Sunrise app falls behind.
+    command_rate: 100.0
+    # Stop streaming and send CancelMotion if no new target arrives in time.
+    command_timeout: 0.3
 
 lbr_statusdata_node:
   ros__parameters:

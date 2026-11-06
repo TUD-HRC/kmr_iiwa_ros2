@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import sys
 import threading
 import time
@@ -34,7 +35,7 @@ from tcpSocket import TCPSocket
 from udpSocket import UDPSocket
 from rclpy.action import ActionServer, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException
 
 
 
@@ -71,8 +72,31 @@ class LbrCommandsNode(Node):
         self.arm_joint_names = [f'{robot_name}_A{i}' for i in range(1, 8)]
         self.motion_lock = threading.Lock()
         # The FJT path and the servo stream both write to the same socket, so
-        # serialize sends from the multi-threaded executor.
+        # serialize sends.
         self.socket_lock = threading.Lock()
+
+        # Latest servo target.  The subscriber callbacks only store it; a
+        # fixed-rate timer actually streams it to the arm.  Sending from the
+        # callbacks made the command rate depend on executor wakeups, which
+        # dropped to ~10 Hz with a MultiThreadedExecutor and left the
+        # SmartServo runtime without updates for hundreds of milliseconds.
+        self.latest_positions = None
+        self.last_command_time = 0.0
+        self.servo_streaming = False
+        self.declare_parameter('command_rate', 100.0)
+        command_rate = float(self.get_parameter('command_rate').value)
+        if command_rate <= 0.0:
+            command_rate = 50.0
+        self.command_period = 1.0 / command_rate
+
+        # If no new target arrives within this window, stop the servo stream
+        # instead of resending a stale destination forever.  MoveIt Servo
+        # publishes continuously, so normal teleoperation never trips this.
+        self.declare_parameter('command_timeout', 0.3)
+        self.command_timeout = float(
+            self.get_parameter('command_timeout').value)
+        if self.command_timeout <= 0.0:
+            self.command_timeout = 0.3
 
         self.declare_parameter('servo_cmd_topic', 'servo_joint_cmd')
         servo_cmd_topic = self.get_parameter('servo_cmd_topic').value
@@ -101,7 +125,14 @@ class LbrCommandsNode(Node):
         while rclpy.ok() and not self.soc.isconnected:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        self.get_logger().info("Socket connected, node is ready")
+        # Start streaming only once the socket is up.  Re-sending the latest
+        # target keeps a steady command stream even if no new message arrived.
+        self.command_timer = self.create_timer(
+            self.command_period, self.send_latest_command)
+
+        self.get_logger().info(
+            f"Socket connected, node is ready (command rate "
+            f"{1.0 / self.command_period:.0f} Hz)")
 
     def status_callback(self,data):
         if (self.last_path_variable == False and data.path_finished == True):
@@ -112,9 +143,13 @@ class LbrCommandsNode(Node):
 
     def shutdown_callback(self, data):
         print(data)
-        msg = "shutdown"
-        self.soc.send(msg)
-        self.soc.isconnected = False
+        self.get_logger().info('Shutdown requested; sending CancelMotion')
+        self.cancel_motion()
+
+    def send_command(self, command, drop_if_busy=True):
+        """Send one line to the Sunrise app; returns False if dropped."""
+        with self.socket_lock:
+            return self.soc.send(command, drop_if_busy=drop_if_busy)
 
     def send_servo_positions(self, positions):
         """Stream a joint position command to the arm over the TCP socket."""
@@ -123,20 +158,65 @@ class LbrCommandsNode(Node):
                 f'Expected {len(self.arm_joint_names)} joint positions, '
                 f'got {len(positions)}',
                 throttle_duration_sec=1.0)
-            return
+            return False
         string_command = "SetJointServoPosition " + " ".join(f"{x:.3f}" for x in positions)
-        with self.socket_lock:
-            self.soc.send(string_command)
+        return self.send_command(string_command)
+
+    def store_servo_positions(self, positions):
+        """Remember the newest servo target; the timer does the sending."""
+        if len(positions) != len(self.arm_joint_names):
+            self.get_logger().error(
+                f'Expected {len(self.arm_joint_names)} joint positions, '
+                f'got {len(positions)}',
+                throttle_duration_sec=1.0)
+            return
+        self.latest_positions = [float(x) for x in positions]
+        self.last_command_time = time.monotonic()
+        self.servo_streaming = True
+
+    def send_latest_command(self):
+        """Timer callback: stream the latest target at a fixed rate."""
+        # A trajectory owns the arm while it runs; don't fight it with a
+        # stale servo target.
+        if self.motion_lock.locked():
+            return
+        if not self.servo_streaming or self.latest_positions is None:
+            return
+        # No new target from ROS for a while: stop instead of driving to the
+        # last streamed point (e.g. after the sine test or Servo is stopped).
+        if time.monotonic() - self.last_command_time > self.command_timeout:
+            self.stop_servo_stream()
+            return
+        if not self.send_servo_positions(self.latest_positions):
+            self.get_logger().warn(
+                'Command socket is backlogged; dropping stale target',
+                throttle_duration_sec=2.0)
+
+    def stop_servo_stream(self):
+        """Stop resending and ask the arm to end the servo motion."""
+        if not self.servo_streaming:
+            return
+        self.get_logger().info(
+            f'No new servo target for {self.command_timeout:.2f} s; '
+            'sending CancelMotion')
+        self.cancel_motion()
+
+    def cancel_motion(self):
+        """Stop the servo stream and tell the arm to cancel its motion."""
+        self.servo_streaming = False
+        self.latest_positions = None
+        if not self.send_command('CancelMotion', drop_if_busy=False):
+            self.get_logger().error('Could not send CancelMotion to the arm')
 
     def joint_cmd_callback(self, msg:JointState):
-        self.send_servo_positions(msg.position)
+        self.store_servo_positions(msg.position)
 
     def servo_cmd_callback(self, msg:Float64MultiArray):
         # Float64MultiArray carries no joint names: Servo publishes in the
         # active joint order of its move_group_name ("arm"), kmr_iiwa_A1..A7.
-        self.send_servo_positions(msg.data)
+        self.store_servo_positions(msg.data)
 
-    def fjt_callback(self, goal_handle):
+    async def fjt_callback(self, goal_handle):
         result = FollowJointTrajectory.Result()
         trajectory = goal_handle.request.trajectory
 
@@ -150,6 +230,11 @@ class LbrCommandsNode(Node):
             return result
 
         try:
+            # The trajectory owns the arm now; drop any pending servo target
+            # so the fixed-rate timer goes quiet until this goal finishes.
+            self.servo_streaming = False
+            self.latest_positions = None
+
             if len(trajectory.points) == 0:
                 result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
                 result.error_string = 'Trajectory contains no points'
@@ -198,13 +283,17 @@ class LbrCommandsNode(Node):
                     self.get_logger().error(result.error_string)
                     goal_handle.abort()
                     return result
-                time.sleep(0.01)
+                await asyncio.sleep(0.01)
 
             result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
             result.error_string = ''
             goal_handle.succeed()
             return result
         finally:
+            # Drop any servo target received during the trajectory so the
+            # timer cannot resume from a stale position.
+            self.servo_streaming = False
+            self.latest_positions = None
             self.motion_lock.release()
 
     def normalize_trajectory(self, trajectory):
@@ -274,8 +363,7 @@ class LbrCommandsNode(Node):
 
             self.get_logger().info(f'sending command {msg}')
 
-            with self.socket_lock:
-                self.soc.send(msg)
+            self.send_command(msg, drop_if_busy=False)
             i+=1
 
 
@@ -288,8 +376,23 @@ def main(argv=sys.argv[1:]):
     rclpy.init(args=argv)
     lbr_commands_node = LbrCommandsNode(args.connection,args.robot)
 
-    executor = MultiThreadedExecutor()
-    rclpy.spin(lbr_commands_node, executor)
+    # A single-threaded executor (plain spin) delivers the command topic at
+    # the real publish rate.  MultiThreadedExecutor collapsed it to ~10 Hz.
+    # fjt_callback is async, so the action server still makes progress while
+    # it waits for path_finished.
+    try:
+        rclpy.spin(lbr_commands_node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        # Do not leave the arm streaming towards a stale target when this
+        # node goes away.
+        try:
+            lbr_commands_node.stop_servo_stream()
+            # Give the Sunrise app a moment to read CancelMotion.
+            time.sleep(0.1)
+        except Exception as e:
+            print(cl_red('Error: ') + f"could not cancel motion: {e}")
 
     try:
         lbr_commands_node.destroy_node()

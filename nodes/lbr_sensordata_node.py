@@ -40,6 +40,11 @@ class LbrSensordataNode(Node):
         port = self.get_parameter('port').value
         self.declare_parameter('connection_type', 'TCP')
         connection_type = self.get_parameter('connection_type').value
+        # Publish the newest sample at a bounded rate instead of busy-looping.
+        self.declare_parameter('publish_rate', 100.0)
+        publish_rate = float(self.get_parameter('publish_rate').value)
+        if publish_rate <= 0.0:
+            publish_rate = 100.0
 
         self.get_logger().info(
             f'Starting up node: {self.get_namespace()}/{self.get_name()} '
@@ -66,11 +71,21 @@ class LbrSensordataNode(Node):
         while rclpy.ok() and not self.soc.isconnected:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        self.get_logger().info("Socket connected, node is ready")
+        # The socket thread only fills a depth-1 deque; publish the latest
+        # sample from a timer so this node no longer spins at 100 % CPU.
+        self.publish_timer = self.create_timer(
+            1.0 / publish_rate, self.publish_latest)
 
-        while rclpy.ok() and self.soc.isconnected:
-            if len(self.soc.lbr_sensordata):
-                self.data_callback(self.soc.lbr_sensordata.pop(0))
+        self.get_logger().info(
+            f"Socket connected, node is ready (publish rate "
+            f"{publish_rate:.0f} Hz)")
+
+    def publish_latest(self):
+        try:
+            values = self.soc.lbr_sensordata.popleft()
+        except IndexError:
+            return
+        self.data_callback(values)
 
     def data_callback(self, values):
         # ">lbr_sensordata,<timestamp>,<7 positions>,<7 torques>"

@@ -20,6 +20,7 @@ import time
 import os
 import rclpy
 import socket
+from collections import deque
 
 
 
@@ -52,14 +53,17 @@ class UDPSocket:
 
         #Data
         self.odometry = []
-        self.laserScanB1 = []
-        self.laserScanB4 = []
-        self.lbr_sensordata = []
+        # Only the newest sample matters for these streams.  Bounding the
+        # queues prevents an ever-growing backlog if a consumer is slower than
+        # the Sunrise stream.
+        self.laserScanB1 = deque(maxlen=1)
+        self.laserScanB4 = deque(maxlen=1)
+        self.lbr_sensordata = deque(maxlen=1)
         self.kmp_statusdata = None
         self.lbr_statusdata = None
 
 
-        threading.Thread(target=self.connect_to_socket).start()
+        threading.Thread(target=self.connect_to_socket, daemon=True).start()
 
     def close(self):
         self.isconnected = False
