@@ -81,11 +81,11 @@ class LbrCommandsNode(Node):
 
         self.sub_shutdown = self.create_subscription(String, 'shutdown', self.shutdown_callback, 10)
         self.sub_statusdata = self.create_subscription(LbrStatusdata, 'lbr_statusdata', self.status_callback, 10,callback_group=self.callback_group)
-        self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 10, callback_group=self.callback_group)
+        self.sub_joint_command = self.create_subscription(JointState, 'joint_cmd', self.joint_cmd_callback, 1, callback_group=self.callback_group)
         # MoveIt Servo publishes std_msgs/Float64MultiArray (positions only, in
         # the MoveIt group's joint order).
         self.sub_servo_command = self.create_subscription(
-            Float64MultiArray, servo_cmd_topic, self.servo_cmd_callback, 10,
+            Float64MultiArray, servo_cmd_topic, self.servo_cmd_callback, 1,
             callback_group=self.callback_group)
         self.fjt_action_server = ActionServer(
             self, FollowJointTrajectory,

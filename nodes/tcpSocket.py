@@ -75,6 +75,7 @@ class TCPSocket:
         while (not self.isconnected):
             try:
                 self.connection, client_address = self.tcp.accept()
+                #self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.tcp.settimeout(0.01)
                 self.isconnected = True
             except:
