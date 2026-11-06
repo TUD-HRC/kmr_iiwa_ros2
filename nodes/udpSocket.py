@@ -42,7 +42,7 @@ def cl_lightcyan(msge): return '\033[96m' + msge + '\033[0m'
 
 
 class UDPSocket:
-    def __init__(self,ip,port,node):
+    def __init__(self, ip, port, node):
         self.BUFFER_SIZE = 4096
         self.isconnected = False
         self.node_name = node

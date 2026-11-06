@@ -25,11 +25,6 @@ from launch_ros.actions import Node, PushRosNamespace, SetRemap
 
 def generate_launch_description():
 
-    connection_type_TCP = 'TCP'
-    connection_type_UDP = 'UDP'
-
-    robot = "KMR2"
-
     param_dir = LaunchConfiguration(
         'param_dir',
         default=os.path.join(
@@ -52,7 +47,6 @@ def generate_launch_description():
             name="kmp_commands_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         Node(
@@ -61,7 +55,6 @@ def generate_launch_description():
             name="kmp_laserscan_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         Node(
@@ -78,7 +71,6 @@ def generate_launch_description():
             name="kmp_statusdata_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         Node(
@@ -87,7 +79,6 @@ def generate_launch_description():
             name="lbr_commands_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         Node(
@@ -96,7 +87,6 @@ def generate_launch_description():
             name="lbr_statusdata_node",
             output="screen",
             emulate_tty=True,
-            arguments=['-c', connection_type_TCP, '-ro', robot],
             parameters=[param_dir]),
 
         Node(

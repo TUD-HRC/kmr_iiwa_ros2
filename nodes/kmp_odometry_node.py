@@ -49,11 +49,6 @@ class KmpOdometryNode(Node):
         self.init_odom = self.get_parameter('init_odom').value
         self.declare_parameter('period_sec', 0.01)
         period_sec = self.get_parameter('period_sec').value
-
-        self.get_logger().info(
-            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
-            f'with {connection_type} socket at: {ip}:{port}'
-        )
         
         if connection_type == 'TCP':
             self.soc = TCPSocket(ip, port,self.get_name())
@@ -62,6 +57,11 @@ class KmpOdometryNode(Node):
         else:
             self.get_logger().error("connection_type " + connection_type + " not recognized")
             raise Exception("connection_type " + connection_type + " not recognized")  
+
+        self.get_logger().info(
+            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
+            f'with {connection_type} socket at: {ip}:{port}'
+        )
 
         self.last_odom_timestamp = ""
         self.odom_x = 0.0

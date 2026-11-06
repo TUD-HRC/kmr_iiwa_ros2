@@ -35,28 +35,33 @@ def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 
 
 class LbrStatusNode(Node):
-    def __init__(self,connection_type,robot):
+    def __init__(self):
         super().__init__('lbr_statusdata_node')
         self.name='lbr_statusdata_node'
         self.last_status_timestamp = 0
         self.path_finished = False
 
+        self.declare_parameter('robot_name', 'kmr_iiwa')
+        self.robot_name = self.get_parameter('robot_name').value
+        self.declare_parameter('ip', '172.31.1.149')
+        ip = self.get_parameter('ip').value
         self.declare_parameter('port', 30006)
-        port = int(self.get_parameter('port').value)
-        if robot in ('KMR1', 'KMR2'):
-            param_name = f'{robot}/ip'
-            self.declare_parameter(param_name, '172.31.1.149')
-            ip = self.get_parameter(param_name).value
-        else:
-            ip = None
-
+        port = self.get_parameter('port').value
+        self.declare_parameter('connection_type', 'TCP')
+        connection_type = self.get_parameter('connection_type').value
 
         if connection_type == 'TCP':
-            self.soc = TCPSocket(ip,port,self.name)
+            self.soc = TCPSocket(ip, port,self.get_name())
         elif connection_type == 'UDP':
-            self.soc=UDPSocket(ip,port,self.name)
+            self.soc = UDPSocket(ip, port,self.get_name())
         else:
-            self.soc=None
+            self.get_logger().error("connection_type " + connection_type + " not recognized")
+            raise Exception("connection_type " + connection_type + " not recognized")  
+
+        self.get_logger().info(
+            f'Starting up node: {self.get_namespace()}/{self.get_name()} '
+            f'with {connection_type} socket at: {ip}:{port}'
+        )
 
 
         # Make Publisher for statusdata
@@ -107,24 +112,18 @@ class LbrStatusNode(Node):
                 status_publisher.publish(msg)
 
 
-def main(argv=sys.argv[1:]):
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--connection')
-    parser.add_argument('-ro', '--robot')
-    args = parser.parse_args(remove_ros_args(args=argv))
+def main(args=None):
 
-    rclpy.init(args=argv)
-    lbr_statusdata_node = LbrStatusNode(args.connection,args.robot)
+    rclpy.init(args=args)
+    lbr_statusdata_node = LbrStatusNode()
 
     rclpy.spin(lbr_statusdata_node)
-
 
     try:
         lbr_statusdata_node.destroy_node()
         rclpy.shutdown()
     except:
         print(cl_red('Error: ') + "rclpy shutdown failed")
-
 
 if __name__ == '__main__':
     main()

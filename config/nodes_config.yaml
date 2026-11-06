@@ -1,53 +1,54 @@
 #These are the ip of the tcp/udp servers,
 #So the pc running these ros2 nodes.
-kmp_statusdata_node:
+/**/kmp_statusdata_node:
   ros__parameters:
-
+    robot_name: 'kmr_iiwa'
     port: 30001
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
+    connection_type: 'UDP'
 
-kmp_commands_node:
+/**/kmp_commands_node:
   ros__parameters:
-
+    robot_name: 'kmr_iiwa'
     port: 30002
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
+    connection_type: 'UDP'
 
-kmp_laserscan_node:
+/**/kmp_laserscan_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30003
     ip: '172.31.1.149'
+    connection_type: 'UDP'
 
-kmp_odometry_node:
+/**/kmp_odometry_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
-    port: 3000
+    port: 30004
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
     init_odom: True
     period_sec: 0.01
 
-lbr_commands_node:
+/**/lbr_commands_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30005
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
+    connection_type: 'UDP'
     # MoveIt Servo output (std_msgs/Float64MultiArray, joint order A1..A7).
     servo_cmd_topic: 'servo_joint_cmd'
 
-lbr_statusdata_node:
+/**/lbr_statusdata_node:
   ros__parameters:
-
+    robot_name: 'kmr_iiwa'
     port: 30006
-    KMR1/ip: '172.31.1.149'
-    KMR2/ip: '172.31.1.149'
+    ip: '172.31.1.149'
+    connection_type: 'UDP'
 
-lbr_sensordata_node:
+/**/lbr_sensordata_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30007
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
