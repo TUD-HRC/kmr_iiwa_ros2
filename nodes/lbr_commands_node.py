@@ -265,7 +265,12 @@ class LbrCommandsNode(Node):
                 type = "EndPoint"
             else:
                 type = "WayPoint"
-            msg = 'pathPointLBR ' + ">" + type + ">" + positions + ">" + velocities + ">" + accelerations
+
+            if i == len(data.points):
+                msg = 'SetJointTrajectory ' + ">" + type + ">" + positions
+            else:
+                msg = 'SetJointTrajectory ' + ">" + type + ">" + positions + ">" + velocities + ">" + accelerations
+
 
             self.get_logger().info(f'sending command {msg}')
 

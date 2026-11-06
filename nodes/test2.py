@@ -42,7 +42,7 @@ class Test2(Node):
                 type = "EndPoint"
             else:
                 type = "WayPoint"
-            msg = 'pathPointLBR ' + ">" + type + ">" + positions + ">" + velocities + ">" + accelerations
+            msg = 'SetJointTrajectory ' + ">" + type + ">" + positions + ">" + velocities + ">" + accelerations
             print(msg)
             i+=1
 
