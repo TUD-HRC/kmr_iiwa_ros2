@@ -10,11 +10,6 @@ continuously changing target instead of a piecewise-constant one.
 
 Use it to separate these two cases:
 
-* smooth motion  -> the ROS -> Java -> SmartServo streaming path is fine and
-  the jerk in servo mode comes from MoveIt Servo's output;
-* jerky motion   -> the SmartServo stream handling (update driven by TCP
-  packet arrival, jitter, Nagle, ...) is the problem.
-
 Safety notes:
 
 * the oscillation is centred on the pose measured when the script starts, so

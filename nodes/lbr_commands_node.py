@@ -95,8 +95,6 @@ class LbrCommandsNode(Node):
             'follow_joint_trajectory_controller/follow_joint_trajectory',
             self.fjt_callback, callback_group=self.callback_group)
 
-        self.point_publisher = self.create_publisher(Float64, 'vinkel', 20)
-
         self.done_moving = False
         self.last_path_variable = False
 
@@ -259,9 +257,6 @@ class LbrCommandsNode(Node):
             positions = " ".join([str(s) for s in point.positions])
             velocities = " ".join([str(s) for s in point.velocities])
             accelerations = " ".join([str(s) for s in point.accelerations])
-            x = Float64()
-            x.data = point.positions[6]
-            self.point_publisher.publish(x)
             if i == 1:
                 type = "StartPoint"
             elif i == len(data.points):

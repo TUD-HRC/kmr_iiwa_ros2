@@ -1,32 +1,32 @@
-#These are the ip of the tcp/TCP servers,
+#These are the ip of the UDP/UDP servers,
 #So the pc running these ros2 nodes.
 /**/kmp_statusdata_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30001
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
 
 /**/kmp_commands_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30002
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
 
 /**/kmp_laserscan_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30003
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
 
 /**/kmp_odometry_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30004
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
     init_odom: True
     period_sec: 0.01
 
@@ -35,7 +35,7 @@
     robot_name: 'kmr_iiwa'
     port: 30005
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
     # MoveIt Servo output (std_msgs/Float64MultiArray, joint order A1..A7).
     servo_cmd_topic: 'servo_joint_cmd'
 
@@ -44,11 +44,11 @@
     robot_name: 'kmr_iiwa'
     port: 30006
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
 
 /**/lbr_sensordata_node:
   ros__parameters:
     robot_name: 'kmr_iiwa'
     port: 30007
     ip: '172.31.1.149'
-    connection_type: 'TCP'
+    connection_type: 'UDP'
