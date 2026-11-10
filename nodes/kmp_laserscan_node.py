@@ -33,6 +33,12 @@ def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 class KmpLaserScanNode(Node):
     def __init__(self):
         super().__init__('kmp_laserscan_node')
+        self.declare_parameter('enabled', True)
+        if not self.get_parameter('enabled').value:
+            self.get_logger().info('kmp_laserscan_node disabled by config')
+            self.enabled = False
+            return
+        self.enabled = True
 
         self.declare_parameter('robot_name', 'kmr_iiwa')
         robot_name = self.get_parameter('robot_name').value
@@ -42,6 +48,10 @@ class KmpLaserScanNode(Node):
         port = self.get_parameter('port').value
         self.declare_parameter('connection_type', 'TCP')
         connection_type = self.get_parameter('connection_type').value
+        self.declare_parameter('enable_scan_front_right', True)
+        self.enable_scan_front_right = self.get_parameter('enable_scan_front_right').value
+        self.declare_parameter('enable_scan_back_left', True)
+        self.enable_scan_back_left = self.get_parameter('enable_scan_back_left').value
 
         self.get_logger().info(
             f'Starting up node: {self.get_namespace()}/{self.get_name()} '
@@ -83,8 +93,16 @@ class KmpLaserScanNode(Node):
         self.scan_back_left.header.frame_id = f"{robot_name}_scan_back_left_link"
 
         # Make Publishers for relevant data
-        self.pub_scan_front_right = self.create_publisher(LaserScan, 'scan_front_right', qos_profile_sensor_data)
-        self.pub_scan_back_left = self.create_publisher(LaserScan, 'scan_back_left', qos_profile_sensor_data)
+        self.pub_scan_front_right = None
+        self.pub_scan_back_left = None
+        if self.enable_scan_front_right:
+            self.pub_scan_front_right = self.create_publisher(LaserScan, 'scan_front_right', qos_profile_sensor_data)
+        else:
+            self.get_logger().info('scan_front_right disabled by config')
+        if self.enable_scan_back_left:
+            self.pub_scan_back_left = self.create_publisher(LaserScan, 'scan_back_left', qos_profile_sensor_data)
+        else:
+            self.get_logger().info('scan_back_left disabled by config')
 
         self.get_logger().info("Waiting for socket connection...")
         while rclpy.ok() and not self.soc.isconnected:
@@ -93,13 +111,15 @@ class KmpLaserScanNode(Node):
         self.get_logger().info("Socket connected, node is ready")
 
         while rclpy.ok() and self.soc.isconnected:
-            if len(self.soc.laserScanB1):
+            if self.enable_scan_front_right and len(self.soc.laserScanB1):
                 self.scan_front_right_callback(self.soc.laserScanB1.pop(0))
-            if len(self.soc.laserScanB4):
+            if self.enable_scan_back_left and len(self.soc.laserScanB4):
                 self.scan_back_left_callback(self.soc.laserScanB4.pop(0))
 
     def scan_front_right_callback(self, values):
 
+        if self.pub_scan_front_right is None:
+            return
         if (len(values) == 4):
             kmr_timestamp = values[1]
             self.last_scan_timestamp = kmr_timestamp
@@ -122,6 +142,8 @@ class KmpLaserScanNode(Node):
 
     def scan_back_left_callback(self, values):
 
+        if self.pub_scan_back_left is None:
+            return
         if (len(values) == 4):
             kmr_timestamp = values[1]
             self.last_scan_timestamp = kmr_timestamp

@@ -37,6 +37,12 @@ def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 class LbrStatusNode(Node):
     def __init__(self):
         super().__init__('lbr_statusdata_node')
+        self.declare_parameter('enabled', True)
+        if not self.get_parameter('enabled').value:
+            self.get_logger().info('lbr_statusdata_node disabled by config')
+            self.enabled = False
+            return
+        self.enabled = True
         self.name='lbr_statusdata_node'
         self.last_status_timestamp = 0
         self.path_finished = False

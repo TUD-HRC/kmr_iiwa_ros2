@@ -35,6 +35,12 @@ def cl_red(msge): return '\033[31m' + msge + '\033[0m'
 class KmpCommandsNode(Node):
     def __init__(self):
         super().__init__('kmp_commands_node')
+        self.declare_parameter('enabled', True)
+        if not self.get_parameter('enabled').value:
+            self.get_logger().info('kmp_commands_node disabled by config')
+            self.enabled = False
+            return
+        self.enabled = True
         self.name = 'kmp_commands_node'
 
         self.declare_parameter('robot_name', 'kmr_iiwa')

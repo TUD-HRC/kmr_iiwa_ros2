@@ -1,7 +1,12 @@
-#These are the ip of the UDP/UDP servers,
-#So the pc running these ros2 nodes.
+# These are the ip of the UDP/UDP servers,
+# So the pc running these ros2 nodes.
+#
+# ``enabled`` mirrors the ENABLE_* switches in the Java Config.java.
+# Disable a stream on both sides together; a disabled node still starts
+# but does not open a socket or wait for the robot to connect.
 /**/kmp_statusdata_node:
   ros__parameters:
+    enabled: false
     robot_name: 'kmr_iiwa'
     port: 30001
     ip: '172.31.1.149'
@@ -9,6 +14,7 @@
 
 /**/kmp_commands_node:
   ros__parameters:
+    enabled: true
     robot_name: 'kmr_iiwa'
     port: 30002
     ip: '172.31.1.149'
@@ -16,13 +22,18 @@
 
 /**/kmp_laserscan_node:
   ros__parameters:
+    enabled: true
     robot_name: 'kmr_iiwa'
     port: 30003
     ip: '172.31.1.149'
     connection_type: 'UDP'
+    # Per-laser publishing, matching ENABLE_KMP_SCAN_FRONT_RIGHT/BACK_LEFT.
+    enable_scan_front_right: true
+    enable_scan_back_left: true
 
 /**/kmp_odometry_node:
   ros__parameters:
+    enabled: true
     robot_name: 'kmr_iiwa'
     port: 30004
     ip: '172.31.1.149'
@@ -32,6 +43,7 @@
 
 /**/lbr_commands_node:
   ros__parameters:
+    enabled: true
     robot_name: 'kmr_iiwa'
     port: 30005
     ip: '172.31.1.149'
@@ -41,6 +53,7 @@
 
 /**/lbr_statusdata_node:
   ros__parameters:
+    enabled: false
     robot_name: 'kmr_iiwa'
     port: 30006
     ip: '172.31.1.149'
@@ -48,6 +61,7 @@
 
 /**/lbr_sensordata_node:
   ros__parameters:
+    enabled: true
     robot_name: 'kmr_iiwa'
     port: 30007
     ip: '172.31.1.149'
