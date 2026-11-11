@@ -58,6 +58,7 @@ Several ROS 2 nodes are started, each communicating over TCP/UDP on a different 
 - Gripper integration
 - Integration of other sensors (e.g. cameras)
 - Reduce robot fan noise
+- Stop the base if connection is drop. At the moment last command is kept (need something on the java app side). Potentially also the base?
 
 ## Notes
 
