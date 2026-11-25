@@ -50,6 +50,8 @@ class KmpOdometryNode(Node):
         port = self.get_parameter('port').value
         self.declare_parameter('connection_type', 'TCP')
         connection_type = self.get_parameter('connection_type').value
+        self.declare_parameter('odom_topic', 'odom')
+        self.odom_topic = self.get_parameter('odom_topic').value
         self.declare_parameter('init_odom', True)
         self.init_odom = self.get_parameter('init_odom').value
         self.declare_parameter('period_sec', 0.01)
@@ -84,7 +86,7 @@ class KmpOdometryNode(Node):
         self.odom_offset_th = 0.0
 
         # Make Publisher for odometry
-        self.odom_pub = self.create_publisher(Odometry, 'odom', qos_profile_sensor_data)
+        self.odom_pub = self.create_publisher(Odometry, self.odom_topic, qos_profile_sensor_data)
 
         self.reset_odom_srv = self.create_service(Trigger, 'reset_odom', self.reset_odom_callback)
         self.get_odom_offset_srv = self.create_service(Trigger, 'get_odom_offset', self.get_odom_offset_callback)

@@ -68,12 +68,9 @@ install(
 
 install(
   PROGRAMS
-    script/dummy_data.py
     nodes/buffer.py
-    script/test.py
     nodes/tcpSocket.py
     nodes/udpSocket.py
-    script/dummy_odom.py
     script/joint_pos_cmd_test.py
     script/joint_sine_cmd_test.py
     nodes/kmp_commands_node.py
@@ -83,7 +80,6 @@ install(
     nodes/lbr_statusdata_node.py
     nodes/lbr_sensordata_node.py
     nodes/lbr_commands_node.py
-    nodes/test2.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
